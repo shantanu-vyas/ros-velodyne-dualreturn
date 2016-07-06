@@ -29,9 +29,16 @@ namespace velodyne_pointcloud
     // advertise output point cloud (before subscribing to input data)
     output_ =
       node.advertise<sensor_msgs::PointCloud2>("velodyne_points", 10);
-      
+
+    strongest_pub_ =
+      node.advertise<sensor_msgs::PointCloud2>("/velodyne/strongestPointCloud", 10);
+
+    last_pub_ =
+      node.advertise<sensor_msgs::PointCloud2>("/velodyne/lastPointCloud", 10);
+
+
     srv_ = boost::make_shared <dynamic_reconfigure::Server<velodyne_pointcloud::
-      CloudNodeConfig> > (private_nh);
+                                                           CloudNodeConfig> > (private_nh);
     dynamic_reconfigure::Server<velodyne_pointcloud::CloudNodeConfig>::
       CallbackType f;
     f = boost::bind (&Convert::callback, this, _1, _2);
@@ -43,39 +50,71 @@ namespace velodyne_pointcloud
                      &Convert::processScan, (Convert *) this,
                      ros::TransportHints().tcpNoDelay(true));
   }
-  
+
   void Convert::callback(velodyne_pointcloud::CloudNodeConfig &config,
-                uint32_t level)
+                         uint32_t level)
   {
-  ROS_INFO("Reconfigure Request");
-  data_->setParameters(config.min_range, config.max_range, config.view_direction,
-                       config.view_width);
+    ROS_INFO("Reconfigure Request");
+    data_->setParameters(config.min_range, config.max_range, config.view_direction,
+                         config.view_width);
   }
 
   /** @brief Callback for raw scan messages. */
   void Convert::processScan(const velodyne_msgs::VelodyneScan::ConstPtr &scanMsg)
   {
-    if (output_.getNumSubscribers() == 0)         // no one listening?
-      return;                                     // avoid much work
+    // if (output_.getNumSubscribers() == 0)         // no one listening?
+    //   return;                                     // avoid much work
+	// if (strongest_pub_.getNumSubscribers() == 0 || last_pub_.getNumSubscribers() == 0)         // no one listening?
+    //   return;                                     
 
     // allocate a point cloud with same time and frame ID as raw data
     velodyne_rawdata::VPointCloud::Ptr
       outMsg(new velodyne_rawdata::VPointCloud());
+	velodyne_rawdata::VPointCloud::Ptr
+	  lastOutMsg(new velodyne_rawdata::VPointCloud());
+	velodyne_rawdata::VPointCloud::Ptr
+      strongestOutMsg(new velodyne_rawdata::VPointCloud());
+
+	
     // outMsg's header is a pcl::PCLHeader, convert it before stamp assignment
-    outMsg->header.stamp = pcl_conversions::toPCL(scanMsg->header).stamp;
-    outMsg->header.frame_id = scanMsg->header.frame_id;
-    outMsg->height = 1;
+    // outMsg->header.stamp = pcl_conversions::toPCL(scanMsg->header).stamp;
+    // outMsg->header.frame_id = scanMsg->header.frame_id;
+    // outMsg->height = 1;
 
     // process each packet provided by the driver
     for (size_t i = 0; i < scanMsg->packets.size(); ++i)
       {
-        data_->unpack(scanMsg->packets[i], *outMsg);
+		//        data_->unpack(scanMsg->packets[i], *outMsg);
+		data_->unpack_vlp16_dual(scanMsg->packets[i], *lastOutMsg, *strongestOutMsg);
+		
       }
 
     // publish the accumulated cloud message
     ROS_DEBUG_STREAM("Publishing " << outMsg->height * outMsg->width
                      << " Velodyne points, time: " << outMsg->header.stamp);
-    output_.publish(outMsg);
+	outMsg->header.stamp = pcl_conversions::toPCL(scanMsg->header).stamp;
+    outMsg->header.frame_id = scanMsg->header.frame_id;
+    outMsg->height = 1;
+	
+    lastOutMsg->header.stamp = pcl_conversions::toPCL(scanMsg->header).stamp;
+    lastOutMsg->header.frame_id = scanMsg->header.frame_id;
+    lastOutMsg->height = 1;
+
+	strongestOutMsg->header.stamp = pcl_conversions::toPCL(scanMsg->header).stamp;
+    strongestOutMsg->header.frame_id = scanMsg->header.frame_id;
+    strongestOutMsg->height = 1;
+
+    // publish the accumulated cloud message
+    // ROS_DEBUG_STREAM("Publishing Strongest " << strongestOutMsg->height * strongestOutMsg->width
+    //                  << " Velodyne points, time: " << strongestOutMsg->header.stamp);
+	// ROS_DEBUG_STREAM("Publishing Last " << lastOutMsg->height * lastOutMsg->width
+    //                  << " Velodyne points, time: " << lastOutMsg->header.stamp);
+		
+    
+	strongest_pub_.publish(strongestOutMsg);
+	last_pub_.publish(lastOutMsg);
+	output_.publish(outMsg);
+
   }
 
 } // namespace velodyne_pointcloud

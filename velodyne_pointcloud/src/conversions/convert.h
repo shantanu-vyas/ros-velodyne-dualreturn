@@ -45,8 +45,12 @@ namespace velodyne_pointcloud
       CloudNodeConfig> > srv_;
     
     boost::shared_ptr<velodyne_rawdata::RawData> data_;
+	boost::shared_ptr<velodyne_rawdata::RawData> strongestData_;
+	boost::shared_ptr<velodyne_rawdata::RawData> lastData_;
     ros::Subscriber velodyne_scan_;
     ros::Publisher output_;
+	ros::Publisher strongest_pub_;
+	ros::Publisher last_pub_;
 
     /// configuration parameters
     typedef struct {
